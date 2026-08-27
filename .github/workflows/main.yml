@@ -1,9 +1,9 @@
 name: Parallel Processing System
 
 on:
+  repository_dispatch:
+    types: [run-task]
   workflow_dispatch:
-  schedule:
-    - cron: '0 * * * *'
 
 concurrency:
   group: job-cluster-${{ github.workflow }}-${{ github.ref }}
